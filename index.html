@@ -1,0 +1,641 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { 
+  Users, Mic, Monitor, UserPlus, Search, CheckCircle, Clock, Undo, Volume2, 
+  UserCheck, Star, Trash2, Menu, X, Upload, FileDown, AlertCircle, 
+  ArrowUp, ArrowDown, ArrowUpToLine, Settings, Save, Calendar, Plus, 
+  ArrowLeft, MoreVertical, LayoutGrid, ChevronRight
+} from 'lucide-react';
+
+// --- 模擬初始資料 (多活動結構) ---
+const INITIAL_EVENTS = [
+  {
+    id: 1,
+    title: '2025 年度科技創新峰會',
+    subtitle: 'Technology Innovation Summit',
+    date: '2025-12-15',
+    guests: [
+      { id: 1, name: '王大明', title: '董事長', org: '宏圖科技', note: '宏 "圖" (tu2)', status: 'pending', introduced: false, category: 'VIP', order: 0 },
+      { id: 2, name: '李雅婷', title: '執行長', org: '未來創投', note: '', status: 'pending', introduced: false, category: 'VIP', order: 0 },
+      { id: 3, name: 'Robert Smith', title: 'APAC VP', org: 'TechGlobal', note: '來自總部', status: 'pending', introduced: false, category: 'VIP', order: 0 },
+    ]
+  },
+  {
+    id: 2,
+    title: '春季慈善晚宴',
+    subtitle: 'Spring Charity Gala',
+    date: '2026-03-20',
+    guests: [
+      { id: 101, name: '陳市長', title: '市長', org: '市政府', note: '', status: 'pending', introduced: false, category: 'Gov', order: 0 },
+      { id: 102, name: '林校長', title: '校長', org: '國立大學', note: '', status: 'pending', introduced: false, category: 'Guest', order: 0 },
+    ]
+  }
+];
+
+const CATEGORY_COLORS = {
+  VIP: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+  Gov: 'bg-blue-100 text-blue-800 border-blue-200',
+  Guest: 'bg-gray-100 text-gray-800 border-gray-200',
+  Staff: 'bg-purple-100 text-purple-800 border-purple-200',
+};
+
+// --- 工具：CSV 下載 ---
+const downloadTemplate = () => {
+  const headers = ['姓名,職稱,單位,分類(VIP/Gov/Guest),備註'];
+  const rows = ['陳小明,總經理,雲端科技,Guest,', '林長官,局長,市府觀光局,Gov,請稱呼林局長'];
+  const csvContent = "\uFEFF" + [headers, ...rows].join("\n");
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.setAttribute('href', url);
+  link.setAttribute('download', '貴賓名單範本.csv');
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
+
+// --- 元件：活動儀表板 (Dashboard) ---
+const DashboardView = ({ events, onSelectEvent, onCreateEvent, onDeleteEvent }) => {
+  const [isCreating, setIsCreating] = useState(false);
+  const [newEvent, setNewEvent] = useState({ title: '', subtitle: '', date: '' });
+
+  const handleCreate = (e) => {
+    e.preventDefault();
+    if (!newEvent.title) return;
+    onCreateEvent(newEvent);
+    setIsCreating(false);
+    setNewEvent({ title: '', subtitle: '', date: '' });
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 p-6 md:p-12 font-sans">
+      <div className="max-w-6xl mx-auto">
+        <header className="mb-10 flex flex-col md:flex-row justify-between items-start md:items-end gap-4">
+          <div>
+            <h1 className="text-4xl font-bold text-slate-900 mb-2 flex items-center gap-3">
+              <LayoutGrid className="w-10 h-10 text-indigo-600" /> 活動管理中心
+            </h1>
+            <p className="text-slate-500 text-lg">請選擇要執行的活動，或建立新活動。</p>
+          </div>
+          <button 
+            onClick={() => setIsCreating(true)}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-3 rounded-xl font-bold flex items-center gap-2 shadow-lg hover:shadow-xl transition-all"
+          >
+            <Plus size={24} /> 建立新活動
+          </button>
+        </header>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {events.map(event => (
+            <div key={event.id} className="bg-white rounded-2xl p-6 shadow-sm hover:shadow-xl border border-slate-200 transition-all group relative overflow-hidden">
+               {/* 刪除按鈕 (Hover 顯示) */}
+               <button 
+                  onClick={(e) => { e.stopPropagation(); if(confirm(`確定要刪除「${event.title}」嗎？此動作無法復原。`)) onDeleteEvent(event.id); }}
+                  className="absolute top-4 right-4 p-2 text-slate-300 hover:text-red-500 hover:bg-red-50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                  title="刪除活動"
+              >
+                  <Trash2 size={20} />
+              </button>
+
+              <div onClick={() => onSelectEvent(event.id)} className="cursor-pointer">
+                <div className="flex items-center gap-2 text-slate-400 text-sm mb-3">
+                  <Calendar size={16} />
+                  {event.date || '未設定日期'}
+                </div>
+                <h3 className="text-2xl font-bold text-slate-800 mb-2 line-clamp-2">{event.title}</h3>
+                <p className="text-slate-500 mb-6 line-clamp-1">{event.subtitle || '無副標題'}</p>
+                
+                <div className="flex items-center justify-between mt-auto pt-4 border-t border-slate-100">
+                  <div className="flex items-center gap-2 text-slate-600 font-medium">
+                    <Users size={18} />
+                    <span>{event.guests.length} 位貴賓</span>
+                  </div>
+                  <div className="bg-indigo-50 text-indigo-600 p-2 rounded-full group-hover:bg-indigo-600 group-hover:text-white transition-colors">
+                    <ChevronRight size={20} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+
+          {/* 建立新活動卡片 (Empty State) */}
+          <button 
+            onClick={() => setIsCreating(true)}
+            className="border-2 border-dashed border-slate-300 rounded-2xl p-6 flex flex-col items-center justify-center text-slate-400 hover:border-indigo-400 hover:text-indigo-500 hover:bg-indigo-50/50 transition-all min-h-[200px]"
+          >
+            <Plus size={48} className="mb-4 opacity-50" />
+            <span className="font-bold text-lg">建立新活動</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 建立活動 Modal */}
+      {isCreating && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+          <div className="bg-white rounded-2xl w-full max-w-lg p-8 shadow-2xl animate-fade-in-up">
+            <h3 className="text-2xl font-bold mb-6 text-slate-800">建立新活動</h3>
+            <form onSubmit={handleCreate} className="space-y-5">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">活動名稱 <span className="text-red-500">*</span></label>
+                <input required className="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="例如：2025 年終尾牙" value={newEvent.title} onChange={e => setNewEvent({...newEvent, title: e.target.value})} />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">副標題 (英文/Slogan)</label>
+                <input className="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" placeholder="例如：Year End Party" value={newEvent.subtitle} onChange={e => setNewEvent({...newEvent, subtitle: e.target.value})} />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-2">活動日期</label>
+                <input type="date" className="w-full p-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 outline-none" value={newEvent.date} onChange={e => setNewEvent({...newEvent, date: e.target.value})} />
+              </div>
+              <div className="flex justify-end gap-3 mt-8">
+                <button type="button" onClick={() => setIsCreating(false)} className="px-5 py-3 text-slate-600 hover:bg-slate-100 rounded-xl font-medium">取消</button>
+                <button type="submit" className="px-5 py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 shadow-lg shadow-indigo-200">建立活動</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+
+// --- 元件：接待處 (Reception) ---
+const ReceptionView = ({ event, onUpdateEvent, onCheckIn, onUndoCheckIn }) => {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isAdding, setIsAdding] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [newGuest, setNewGuest] = useState({ name: '', title: '', org: '', note: '', category: 'Guest' });
+  const [editingEventInfo, setEditingEventInfo] = useState({ title: '', subtitle: '' });
+  const fileInputRef = useRef(null);
+
+  // Sync editing info when modal opens
+  useEffect(() => {
+    if (isSettingsOpen) {
+      setEditingEventInfo({ title: event.title, subtitle: event.subtitle });
+    }
+  }, [isSettingsOpen, event]);
+
+  const guests = event.guests || [];
+  const filteredGuests = guests.filter(g => 
+    g.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    g.org.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    g.title.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const handleAddSubmit = (e) => {
+    e.preventDefault();
+    if (!newGuest.name) return;
+    const newId = guests.length > 0 ? Math.max(...guests.map(g => g.id)) + 1 : 1;
+    const maxOrder = guests.filter(g => g.status === 'arrived').length > 0 ? Math.max(...guests.map(g => g.order || 0)) : 0;
+    
+    // 現場新增，直接視為已簽到 (Arrived)
+    const guestToAdd = { ...newGuest, id: newId, status: 'arrived', time: Date.now(), introduced: false, order: maxOrder + 1 };
+    const updatedGuests = [...guests, guestToAdd];
+    onUpdateEvent({ ...event, guests: updatedGuests }, guestToAdd); // Pass latest arrival
+    
+    setIsAdding(false);
+    setNewGuest({ name: '', title: '', org: '', note: '', category: 'Guest' });
+  };
+
+  const handleSettingsSubmit = (e) => {
+    e.preventDefault();
+    onUpdateEvent({ ...event, ...editingEventInfo });
+    setIsSettingsOpen(false);
+  };
+
+  const handleImport = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const rows = evt.target.result.split('\n').map(row => row.trim()).filter(row => row);
+        let startId = guests.length > 0 ? Math.max(...guests.map(g => g.id)) + 1 : 1;
+        const newGuests = [];
+        for (let i = 1; i < rows.length; i++) {
+          const cols = rows[i].split(',');
+          if (cols.length >= 3) {
+            newGuests.push({
+              id: startId++,
+              name: cols[0]?.trim() || '未命名',
+              title: cols[1]?.trim() || '',
+              org: cols[2]?.trim() || '',
+              category: cols[3]?.trim() || 'Guest',
+              note: cols[4]?.trim() || '',
+              status: 'pending',
+              introduced: false,
+              order: 0
+            });
+          }
+        }
+        onUpdateEvent({ ...event, guests: [...guests, ...newGuests] });
+        alert(`成功匯入 ${newGuests.length} 筆名單`);
+      } catch (err) { alert('匯入失敗'); }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  const handleDeleteGuest = (id) => {
+    const updatedGuests = guests.filter(g => g.id !== id);
+    onUpdateEvent({ ...event, guests: updatedGuests });
+  };
+
+  return (
+    <div className="p-4 md:p-6 bg-slate-50 min-h-screen">
+      <header className="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
+            <Users className="w-6 h-6" /> 接待處名單
+          </h2>
+          <p className="text-slate-500 text-sm mt-1">活動：<span className="font-semibold text-indigo-600">{event.title}</span></p>
+        </div>
+        
+        <div className="flex gap-2 flex-wrap">
+          <button onClick={() => setIsSettingsOpen(true)} className="bg-white border border-slate-300 text-slate-700 px-3 py-2 rounded-lg flex items-center gap-2 text-sm hover:bg-slate-100 shadow-sm">
+            <Settings size={16} /> 活動設定
+          </button>
+          <input type="file" ref={fileInputRef} onChange={handleImport} accept=".csv" className="hidden" />
+          <button onClick={downloadTemplate} className="bg-white border border-slate-300 text-slate-600 px-3 py-2 rounded-lg flex items-center gap-2 text-sm hover:bg-slate-50">
+            <FileDown size={16} /> 範本
+          </button>
+          <button onClick={() => fileInputRef.current.click()} className="bg-slate-700 hover:bg-slate-800 text-white px-3 py-2 rounded-lg flex items-center gap-2 text-sm">
+            <Upload size={16} /> 匯入
+          </button>
+          <button onClick={() => setIsAdding(true)} className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg flex items-center gap-2 text-sm shadow-sm">
+            <UserPlus size={16} /> 新增
+          </button>
+        </div>
+      </header>
+
+      <div className="relative mb-6">
+        <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400" size={20} />
+        <input 
+          type="text" 
+          placeholder="搜尋姓名、單位、職稱..." 
+          className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-sm text-lg"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        {filteredGuests.map(guest => (
+          <div key={guest.id} className={`bg-white p-4 rounded-xl border transition-all relative group ${guest.status === 'arrived' ? 'border-green-500 shadow-md bg-green-50' : 'border-slate-200 shadow-sm hover:shadow-md'}`}>
+            <button 
+                onClick={(e) => { e.stopPropagation(); if(confirm('確定要刪除？')) handleDeleteGuest(guest.id); }}
+                className="absolute top-2 right-2 p-1 text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+            >
+                <Trash2 size={16} />
+            </button>
+            <div className="flex justify-between items-start mb-2 pr-6">
+              <span className={`px-2 py-0.5 rounded text-xs font-semibold ${CATEGORY_COLORS[guest.category] || CATEGORY_COLORS.Guest}`}>{guest.category}</span>
+              {guest.status === 'arrived' && (<span className="flex items-center text-green-600 text-xs font-bold gap-1"><CheckCircle size={14} /> 已簽到</span>)}
+            </div>
+            <h3 className="text-xl font-bold text-slate-800 mb-1">{guest.name}</h3>
+            <p className="text-slate-600 text-sm">{guest.org} {guest.title}</p>
+            {guest.note && (<div className="mt-2 text-xs text-amber-600 bg-amber-50 p-1.5 rounded border border-amber-100 flex items-start gap-1"><Star size={12} className="mt-0.5 flex-shrink-0" /> {guest.note}</div>)}
+            <div className="mt-4 pt-3 border-t border-slate-100">
+              {guest.status === 'pending' ? (
+                <button onClick={() => onCheckIn(guest.id)} className="w-full py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2">
+                  <UserCheck size={18} /> 確認簽到
+                </button>
+              ) : (
+                <div className="flex gap-2">
+                  <button disabled className="flex-1 py-2 bg-green-100 text-green-700 rounded-lg font-medium cursor-default text-sm">
+                    {guest.time ? new Date(guest.time).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : '已到場'}
+                  </button>
+                  <button onClick={() => onUndoCheckIn(guest.id)} className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-600 rounded-lg"><Undo size={18} /></button>
+                </div>
+              )}
+            </div>
+          </div>
+        ))}
+        {filteredGuests.length === 0 && (
+            <div className="col-span-full py-10 text-center text-slate-400 flex flex-col items-center">
+                <AlertCircle size={48} className="mb-2 opacity-50"/>
+                <p>找不到相關名單</p>
+            </div>
+        )}
+      </div>
+
+      {isSettingsOpen && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl">
+             <h3 className="text-xl font-bold mb-4">活動資訊設定</h3>
+             <form onSubmit={handleSettingsSubmit} className="space-y-4">
+                <div><label className="block text-sm font-medium mb-1">主標題</label><input required className="w-full p-2 border rounded-lg" value={editingEventInfo.title} onChange={e => setEditingEventInfo({...editingEventInfo, title: e.target.value})} /></div>
+                <div><label className="block text-sm font-medium mb-1">副標題</label><input className="w-full p-2 border rounded-lg" value={editingEventInfo.subtitle} onChange={e => setEditingEventInfo({...editingEventInfo, subtitle: e.target.value})} /></div>
+                <div className="flex justify-end gap-3 mt-6"><button type="button" onClick={() => setIsSettingsOpen(false)} className="px-4 py-2 text-slate-600">取消</button><button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg">儲存</button></div>
+             </form>
+          </div>
+        </div>
+      )}
+
+      {isAdding && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl w-full max-w-md p-6 shadow-xl">
+            <h3 className="text-xl font-bold mb-4">手動新增貴賓</h3>
+            <form onSubmit={handleAddSubmit} className="space-y-4">
+              <div><label className="block text-sm font-medium mb-1">姓名 *</label><input required className="w-full p-2 border rounded-lg" value={newGuest.name} onChange={e => setNewGuest({...newGuest, name: e.target.value})} /></div>
+              <div className="grid grid-cols-2 gap-4">
+                 <div><label className="block text-sm font-medium mb-1">單位</label><input className="w-full p-2 border rounded-lg" value={newGuest.org} onChange={e => setNewGuest({...newGuest, org: e.target.value})} /></div>
+                 <div><label className="block text-sm font-medium mb-1">職稱</label><input className="w-full p-2 border rounded-lg" value={newGuest.title} onChange={e => setNewGuest({...newGuest, title: e.target.value})} /></div>
+              </div>
+              <div><label className="block text-sm font-medium mb-1">分類</label>
+                <select className="w-full p-2 border rounded-lg" value={newGuest.category} onChange={e => setNewGuest({...newGuest, category: e.target.value})}>
+                    <option value="Guest">一般來賓</option><option value="VIP">重要貴賓</option><option value="Gov">政府官員</option><option value="Staff">工作人員</option>
+                </select>
+              </div>
+              <div><label className="block text-sm font-medium mb-1">備註</label><input className="w-full p-2 border rounded-lg" value={newGuest.note} onChange={e => setNewGuest({...newGuest, note: e.target.value})} /></div>
+              <div className="flex justify-end gap-3 mt-6"><button type="button" onClick={() => setIsAdding(false)} className="px-4 py-2 text-slate-600">取消</button><button type="submit" className="px-4 py-2 bg-indigo-600 text-white rounded-lg">新增</button></div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// --- 元件：司儀端 (Emcee) ---
+const EmceeView = ({ event, onUpdateEvent }) => {
+  const guests = event.guests || [];
+  const queue = guests.filter(g => g.status === 'arrived' && !g.introduced).sort((a, b) => b.order - a.order);
+  const history = guests.filter(g => g.introduced).sort((a, b) => b.introducedTime - a.introducedTime);
+
+  const getMaxOrder = () => {
+     const arrivedGuests = guests.filter(g => g.status === 'arrived');
+     if (arrivedGuests.length === 0) return 0;
+     return Math.max(...arrivedGuests.map(g => g.order || 0));
+  };
+
+  const updateGuest = (id, changes) => {
+      const updatedGuests = guests.map(g => g.id === id ? { ...g, ...changes } : g);
+      onUpdateEvent({ ...event, guests: updatedGuests });
+  };
+
+  const handleReorder = (id, direction) => {
+    // 取得當前佇列 (不包含 history, 不包含 pending)
+    const currentQueue = guests.filter(g => g.status === 'arrived' && !g.introduced).sort((a, b) => b.order - a.order);
+    const index = currentQueue.findIndex(g => g.id === id);
+    if (index === -1) return;
+
+    let updatedGuests = [...guests];
+    const currentGuest = currentQueue[index];
+
+    if (direction === 'top') {
+        const maxOrder = getMaxOrder();
+        if (currentGuest.order === maxOrder) return;
+        updatedGuests = updatedGuests.map(g => g.id === id ? { ...g, order: maxOrder + 1 } : g);
+    } else if (direction === 'up' && index > 0) {
+        const prevGuest = currentQueue[index - 1]; // Queue is sorted desc, so index-1 is "higher" order
+        updatedGuests = updatedGuests.map(g => {
+            if (g.id === currentGuest.id) return { ...g, order: prevGuest.order };
+            if (g.id === prevGuest.id) return { ...g, order: currentGuest.order };
+            return g;
+        });
+    } else if (direction === 'down' && index < currentQueue.length - 1) {
+        const nextGuest = currentQueue[index + 1];
+        updatedGuests = updatedGuests.map(g => {
+            if (g.id === currentGuest.id) return { ...g, order: nextGuest.order };
+            if (g.id === nextGuest.id) return { ...g, order: currentGuest.order };
+            return g;
+        });
+    }
+    onUpdateEvent({ ...event, guests: updatedGuests });
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-900 text-slate-100 flex flex-col md:flex-row">
+      <div className="flex-1 p-6 border-r border-slate-700 flex flex-col">
+        <header className="mb-6 flex justify-between items-center border-b border-slate-700 pb-4">
+          <h2 className="text-3xl font-bold text-white flex items-center gap-3"><Mic className="text-red-500 w-8 h-8" /> 待介紹 ({event.title})</h2>
+          <span className="bg-red-600 px-3 py-1 rounded-full text-sm font-bold animate-pulse">Live: {queue.length}</span>
+        </header>
+        <div className="flex-1 overflow-y-auto space-y-4 pr-2">
+          {queue.length === 0 ? <div className="flex flex-col items-center justify-center h-64 text-slate-500"><CheckCircle size={48} className="opacity-50"/><p>暫無名單</p></div> : 
+            queue.map((guest, idx) => (
+              <div key={guest.id} className="bg-slate-800 border-l-4 border-yellow-500 rounded-r-xl shadow-lg flex">
+                <div className="flex flex-col border-r border-slate-700 w-12 bg-slate-800/50">
+                    <button onClick={() => handleReorder(guest.id, 'top')} className="flex-1 flex items-center justify-center text-slate-500 hover:text-white" title="置頂"><ArrowUpToLine size={16}/></button>
+                    <button onClick={() => handleReorder(guest.id, 'up')} className={`flex-1 flex items-center justify-center ${idx===0?'opacity-30':'hover:text-white'}`} disabled={idx===0}><ArrowUp size={16}/></button>
+                    <button onClick={() => handleReorder(guest.id, 'down')} className={`flex-1 flex items-center justify-center ${idx===queue.length-1?'opacity-30':'hover:text-white'}`} disabled={idx===queue.length-1}><ArrowDown size={16}/></button>
+                </div>
+                <div className="flex-1 p-5 flex justify-between items-start">
+                  <div>
+                     <div className="flex items-center gap-2 mb-1"><span className="text-yellow-400 font-bold text-lg">{guest.org}</span><span className="text-slate-400 text-sm">{guest.title}</span></div>
+                     <h3 className="text-4xl font-black text-white mb-2">{guest.name}</h3>
+                     {guest.note && (<p className="text-pink-400 text-lg flex items-center gap-2"><Volume2 size={20} /> {guest.note}</p>)}
+                  </div>
+                  <button onClick={() => updateGuest(guest.id, { introduced: true, introducedTime: Date.now() })} className="ml-4 bg-green-600 hover:bg-green-500 text-white px-6 py-4 rounded-xl font-bold text-xl shadow-lg transform transition-transform active:scale-95 flex flex-col items-center flex-shrink-0">
+                    <CheckCircle className="mb-1" /> 已介紹
+                  </button>
+                </div>
+              </div>
+            ))
+          }
+        </div>
+      </div>
+      <div className="w-full md:w-80 bg-slate-950 p-6 flex flex-col">
+        <h3 className="text-xl font-semibold text-slate-400 mb-4 flex items-center gap-2"><Clock size={20} /> 已介紹紀錄</h3>
+        <div className="flex-1 overflow-y-auto space-y-3">
+           {history.map(g => (
+             <div key={g.id} className="bg-slate-900 p-3 rounded-lg border border-slate-800 opacity-75">
+               <div className="flex justify-between items-center mb-1"><span className="text-slate-400 text-sm">{g.org}</span><button onClick={() => updateGuest(g.id, { introduced: false })} className="text-slate-600 hover:text-slate-400"><Undo size={14} /></button></div>
+               <div className="font-bold text-slate-300">{g.name}</div>
+             </div>
+           ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- 元件：大螢幕 (Display) ---
+const DisplayView = ({ event, latestArrival }) => {
+  const guests = event.guests || [];
+  const arrivedCount = guests.filter(g => g.status === 'arrived').length;
+  const totalCount = guests.length;
+  const [showPopup, setShowPopup] = useState(false);
+  
+  useEffect(() => {
+    if (latestArrival) {
+      setShowPopup(true);
+      const timer = setTimeout(() => setShowPopup(false), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [latestArrival]);
+
+  return (
+    <div className="h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-slate-900 flex flex-col items-center justify-center relative overflow-hidden">
+      <div className="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/cubes.png')]"></div>
+      <div className="text-center z-10 animate-fade-in-up px-4">
+        <h1 className="text-5xl md:text-8xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-200 to-yellow-500 mb-6 drop-shadow-lg leading-tight">{event.title}</h1>
+        <p className="text-xl md:text-3xl text-indigo-200 font-light tracking-widest uppercase">{event.subtitle}</p>
+      </div>
+      <div className="absolute bottom-10 left-10 flex gap-8 z-10">
+        <div className="text-center"><div className="text-5xl font-bold text-white">{arrivedCount}</div><div className="text-indigo-300 text-sm uppercase tracking-wider">已蒞臨</div></div>
+        <div className="w-px bg-indigo-700 h-16"></div>
+        <div className="text-center opacity-50"><div className="text-5xl font-bold text-white">{totalCount}</div><div className="text-indigo-300 text-sm uppercase tracking-wider">受邀貴賓</div></div>
+      </div>
+      {showPopup && latestArrival && (
+        <div className="absolute inset-0 flex items-center justify-center z-50 bg-black/60 backdrop-blur-sm transition-all duration-500">
+           <div className="bg-white/10 border border-white/20 p-12 rounded-3xl backdrop-blur-md shadow-2xl text-center transform scale-100 animate-bounce-in max-w-4xl w-full mx-4">
+              <div className="text-yellow-400 text-2xl font-bold mb-4 uppercase tracking-widest">Warm Welcome</div>
+              <div className="text-4xl text-white mb-2">{latestArrival.org} {latestArrival.title}</div>
+              <div className="text-7xl md:text-8xl font-black text-white mb-6 drop-shadow-xl">{latestArrival.name}</div>
+              <div className="text-2xl text-indigo-200">蒞臨會場</div>
+           </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// --- 主程式：狀態管理中心 ---
+export default function EventManagementSystem() {
+  const [events, setEvents] = useState(INITIAL_EVENTS);
+  const [activeEventId, setActiveEventId] = useState(null); // null = Dashboard
+  const [activeView, setActiveView] = useState('reception'); // reception, emcee, display
+  const [latestArrival, setLatestArrival] = useState(null); // 當前活動的最新到場者
+  const [isSidebarOpen, setSidebarOpen] = useState(false);
+
+  // 取得當前選中的活動物件
+  const activeEvent = events.find(e => e.id === activeEventId);
+
+  // --- 活動管理 (Dashboard) ---
+  const handleCreateEvent = (newEvent) => {
+    const id = events.length > 0 ? Math.max(...events.map(e => e.id)) + 1 : 1;
+    setEvents([...events, { ...newEvent, id, guests: [] }]);
+  };
+
+  const handleDeleteEvent = (id) => {
+    setEvents(events.filter(e => e.id !== id));
+  };
+
+  // --- 單一活動內部邏輯 (Wrapper) ---
+  const handleUpdateEvent = (updatedEvent, newArrival = null) => {
+    setEvents(prev => prev.map(e => e.id === updatedEvent.id ? updatedEvent : e));
+    if (newArrival) {
+      setLatestArrival(newArrival);
+    }
+  };
+
+  // 簽到處理
+  const handleCheckIn = (guestId) => {
+    if (!activeEvent) return;
+    const guests = activeEvent.guests;
+    // 計算最大 Order 讓新簽到者排最上面
+    const maxOrder = guests.filter(g => g.status === 'arrived').length > 0 ? Math.max(...guests.map(g => g.order || 0)) : 0;
+    
+    const timestamp = Date.now();
+    const updatedGuests = guests.map(g => 
+      g.id === guestId ? { ...g, status: 'arrived', time: timestamp, order: maxOrder + 1 } : g
+    );
+    
+    const guest = guests.find(g => g.id === guestId);
+    handleUpdateEvent({ ...activeEvent, guests: updatedGuests }, { ...guest, time: timestamp });
+  };
+
+  const handleUndoCheckIn = (guestId) => {
+    if (!activeEvent) return;
+    const updatedGuests = activeEvent.guests.map(g => 
+      g.id === guestId ? { ...g, status: 'pending', time: null, introduced: false, order: 0 } : g
+    );
+    handleUpdateEvent({ ...activeEvent, guests: updatedGuests });
+  };
+
+  const NavButton = ({ target, label, icon: Icon }) => (
+    <button 
+      onClick={() => { setActiveView(target); setSidebarOpen(false); }}
+      className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${
+        activeView === target 
+          ? 'bg-indigo-600 text-white shadow-lg' 
+          : 'text-slate-400 hover:bg-slate-800 hover:text-white'
+      }`}
+    >
+      <Icon size={20} />
+      <span className="font-medium">{label}</span>
+    </button>
+  );
+
+  // --- 如果沒有選擇活動，顯示儀表板 ---
+  if (!activeEventId) {
+    return (
+      <DashboardView 
+        events={events} 
+        onSelectEvent={setActiveEventId} 
+        onCreateEvent={handleCreateEvent}
+        onDeleteEvent={handleDeleteEvent}
+      />
+    );
+  }
+
+  // --- 進入特定活動的工作區 ---
+  return (
+    <div className="flex h-screen bg-slate-900 overflow-hidden font-sans">
+      <button className="fixed top-4 right-4 z-50 p-2 bg-slate-800 text-white rounded-lg md:hidden shadow-lg" onClick={() => setSidebarOpen(!isSidebarOpen)}>
+        {isSidebarOpen ? <X /> : <Menu />}
+      </button>
+
+      {/* 側邊欄 */}
+      <div className={`
+        fixed md:relative z-40 w-64 h-full bg-slate-950 border-r border-slate-800 p-4 flex flex-col transition-transform duration-300
+        ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+      `}>
+        <div className="mb-6 px-2 mt-2">
+            <button 
+                onClick={() => { setActiveEventId(null); setLatestArrival(null); }}
+                className="flex items-center gap-2 text-slate-400 hover:text-white mb-4 text-sm transition-colors"
+            >
+                <ArrowLeft size={16} /> 回到活動列表
+            </button>
+            <h1 className="text-lg font-bold text-white tracking-wide line-clamp-2 leading-tight">
+                {activeEvent.title}
+            </h1>
+            <p className="text-xs text-indigo-400 mt-1">{activeEvent.subtitle}</p>
+        </div>
+
+        <nav className="space-y-2 flex-1">
+          <NavButton target="reception" label="接待處名單" icon={Users} />
+          <NavButton target="emcee" label="司儀控台" icon={Mic} />
+          <NavButton target="display" label="迎賓大螢幕" icon={Monitor} />
+        </nav>
+
+        <div className="pt-4 border-t border-slate-800">
+           <div className="bg-slate-900 rounded-lg p-3">
+             <div className="text-xs text-slate-500 mb-1">系統狀態</div>
+             <div className="flex items-center gap-2 text-green-400 text-sm font-bold">
+               <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+               多活動版 v5.0
+             </div>
+           </div>
+        </div>
+      </div>
+
+      {/* 主內容區 */}
+      <main className="flex-1 overflow-auto relative">
+        {activeView === 'reception' && (
+          <ReceptionView 
+            event={activeEvent}
+            onUpdateEvent={handleUpdateEvent}
+            onCheckIn={handleCheckIn}
+            onUndoCheckIn={handleUndoCheckIn}
+          />
+        )}
+        {activeView === 'emcee' && (
+          <EmceeView 
+            event={activeEvent}
+            onUpdateEvent={handleUpdateEvent}
+          />
+        )}
+        {activeView === 'display' && (
+          <DisplayView 
+            event={activeEvent}
+            latestArrival={latestArrival}
+          />
+        )}
+      </main>
+    </div>
+  );
+}
