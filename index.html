@@ -15,29 +15,15 @@ import {
 import { getAuth, signInAnonymously, onAuthStateChanged, signInWithCustomToken } from 'firebase/auth';
 
 // --- Firebase Initialization ---
-// 在 Canvas 環境中，這些變數會由系統提供。
-// 若您在本地執行，請用您自己的 config 替換這裡的邏輯。
-/*const getFirebaseConfig = () => {
-  if (typeof __firebase_config !== 'undefined') {
-    return JSON.parse(__firebase_config);
-  }
-  return null; // Local development fallback
-};
 
-const getAppId = () => {
-  return typeof __app_id !== 'undefined' ? __app_id : 'default-event-system';
-};
-
-// Initialize Firebase
-const firebaseConfig = getFirebaseConfig();
-*/
+// 使用您提供的 Config
 const firebaseConfig = {
-  apiKey: "AIzaSyCm7wEpw-c5W12LjeiRUhqVfaovWxJNFeE",        // 貼上您的 apiKey
-  authDomain: "event-checkin-system-7ac91.firebaseapp.com",    // 貼上您的 authDomain
-  projectId: "event-checkin-system-7ac91",     // 貼上您的 projectId
-  storageBucket: "event-checkin-system-7ac91.firebasestorage.app",
-  messagingSenderId: "199239899034",
-  appId: "1:199239899034:web:1683ce34b46faa3e35cc23"
+  apiKey: "AIzaSyCm7wEpw-c5W12LjeiRUhqVfaovWxJNFeE",
+  authDomain: "event-checkin-system-7ac91.firebaseapp.com",
+  projectId: "event-checkin-system-7ac91",
+  storageBucket: "", // 若無用到 storage 可留空
+  messagingSenderId: "", // 若無用到 messaging 可留空
+  appId: "" // 若無用到 appId 可留空
 };
 
 // Initialize Firebase
@@ -47,24 +33,25 @@ let app = null;
 
 // 確保有 config 才啟動
 if (firebaseConfig.apiKey) {
-  app = initializeApp(firebaseConfig);
-  db = getFirestore(app);
-  auth = getAuth(app);
-}
-let db = null;
-let auth = null;
-let app = null;
-
-if (firebaseConfig) {
-  app = initializeApp(firebaseConfig);
-  db = getFirestore(app);
-  auth = getAuth(app);
+  try {
+    app = initializeApp(firebaseConfig);
+    db = getFirestore(app);
+    auth = getAuth(app);
+  } catch (error) {
+    console.error("Firebase Initialization Error:", error);
+  }
 }
 
 const appId = "my-company-event-v1";
 // Collection Helpers
-const getEventsColl = () => collection(db, 'artifacts', appId, 'public', 'data', 'events_v2');
-const getGuestsColl = () => collection(db, 'artifacts', appId, 'public', 'data', 'guests_v2');
+const getEventsColl = () => {
+    if (!db) return null;
+    return collection(db, 'artifacts', appId, 'public', 'data', 'events_v2');
+};
+const getGuestsColl = () => {
+    if (!db) return null;
+    return collection(db, 'artifacts', appId, 'public', 'data', 'guests_v2');
+};
 
 // --- 常數設定 ---
 const CATEGORY_COLORS = {
@@ -443,11 +430,16 @@ export default function EventManagementSystem() {
     }
 
     const initAuth = async () => {
+      try {
         if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
             await signInWithCustomToken(auth, __initial_auth_token);
         } else {
             await signInAnonymously(auth);
         }
+      } catch (error) {
+        console.warn("Custom token sign-in failed, falling back to anonymous auth:", error);
+        await signInAnonymously(auth);
+      }
     };
     initAuth();
 
